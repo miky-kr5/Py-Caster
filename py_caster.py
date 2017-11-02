@@ -20,10 +20,11 @@ TOLERANCE     = 0.000001
 # Projection parameters
 ##############################################################
 
-FB_SIZE         = (320, 200)
-DEG2RAD         = 3.1415926535897932384626433 / 180.0
-FOV             = 66.84962236520761
-ANGLE_INCREMENT = FOV / float(FB_SIZE[0])
+FB_SIZE                = (320, 200)
+DEG2RAD                = 3.1415926535897932384626433 / 180.0
+FOV                    = 66.84962236520761
+ANGLE_INCREMENT        = FOV / float(FB_SIZE[0])
+HEIGHT_CLAMP_MULTIPLER = 10 # MUST BE AN INTEGER
 
 ##############################################################
 # Player parameters
@@ -112,23 +113,23 @@ class Ray(object):
 ##############################################################
 
 class Intersection(object):
-    def __init__(self, ray, point, tex_coords):
+    def __init__(self, ray, point, tex_coord):
         self.p = point
         self.d = ray.o.distance(point)
-        self.tc = tex_coords
+        self.tc = tex_coord
 
 ##############################################################
 # Line Segment Class
 ##############################################################
 
 class LineSegment(object):
-    def __init__(self, a, b, tca, tcb, c = (0, 0, 0)):
+    def __init__(self, a, b, tca, tcb, texture):
         self.a = a
         self.b = b
         self.v = b.sub(a).normalize()
         self.tca = tca
         self.tcb = tcb
-        self.color = c
+        self.texture = pygame.image.load(texture)
 
     def intersect(self, r):
         def classifyPoint2D(point):
@@ -144,6 +145,9 @@ class LineSegment(object):
             else:
                 return -1
 
+        def lerp(a, b, t):
+            return (a * t) + (b * (1.0 - t))
+
         side = classifyPoint2D(r.o)
         v2 = self.b.sub(self.a) if sign(side) > 0 else self.a.sub(self.b)
         v3 = vec2(-r.d.y, r.d.x)
@@ -157,9 +161,17 @@ class LineSegment(object):
             t2 = v1.dot(v3) / det
 
             if t2 >= 0.0 and t2 <= 1.0 and t1 > 0.0:
-                return Intersection(r, r.o.add(r.d.scale(t1)), self.tca.mix(self.tcb, t2))
+                return Intersection(r, r.o.add(r.d.scale(t1)), lerp(self.tca, self.tcb, t2))
             else:
                 return None
+
+    def get_tex_column(self, s):
+        w = self.texture.get_width()
+        h = self.texture.get_height()
+        _s = s * w if s >= 0.0 else (1.0 - (math.ceil(s) - s)) * w
+        _s = int(_s % w)
+        # Creating a subsurface is pretty fast in pygame, no copying of pixels is needed
+        return self.texture.subsurface(pygame.Rect(_s, 0, 1, h))
 
 ##############################################################
 # Main Function
@@ -168,8 +180,6 @@ class LineSegment(object):
 def main():
     # Local variables.
     done = False
-    fog_enabled = False
-    toggle_fog = False
     player_pos = vec2(0.0, 0.0)
     player_dir = vec2(-1.0, 0.0)
     plane = vec2(0.0, 0.66)
@@ -184,11 +194,11 @@ def main():
     pygame.key.set_repeat(17, 17)
 
     # Define walls.
-    walls = [LineSegment(vec2(-3.0, 3.0), vec2(3.0, 3.0), vec2(0.0, 1.0), vec2(0.0, 1.0), (255, 0, 0)),
-             LineSegment(vec2(3.0, 3.0), vec2(3.0, -3.0), vec2(0.0, 1.0), vec2(0.0, 1.0), (0, 255, 0)),
-             LineSegment(vec2(1.5, 1.5), vec2(3.0, 3.0), vec2(0.0, 1.0), vec2(0.0, 1.0), (255, 255, 0)),
-             LineSegment(vec2(3.0, -3.0), vec2(-3.0, -3.0), vec2(0.0, 1.0), vec2(0.0, 1.0), (0, 0, 255)),
-             LineSegment(vec2(-3.0, -3.0), vec2(-3.0, 3.0), vec2(0.0, 1.0), vec2(0.0, 1.0), (255, 0, 255))]
+    walls = [LineSegment(vec2(-3.0, 3.0), vec2(3.0, 3.0), -3.0, 3.0, "Textures/brownstone.jpg"),
+             LineSegment(vec2(3.0, 3.0), vec2(3.0, -3.0), 0.0, 6.0, "Textures/diagmetal.jpg"),
+             LineSegment(vec2(1.5, 1.5), vec2(3.0, 3.0), 0.0, 1.5, "Textures/goldlites.jpg"),
+             LineSegment(vec2(3.0, -3.0), vec2(-3.0, -3.0), 0.0, 6.0, "Textures/metal.jpg"),
+             LineSegment(vec2(-3.0, -3.0), vec2(-3.0, 3.0), 0.0, 6.0, "Textures/orangetiles.jpg")]
 
     # Main game loop.
     try:
@@ -201,38 +211,14 @@ def main():
                 if (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE) or event.type == pygame.QUIT:
                     done = True
 
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_UP:
-                    arrow_keys[pygame.K_UP] = True
-
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_DOWN:
-                    arrow_keys[pygame.K_DOWN] = True
-
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_LEFT:
-                    arrow_keys[pygame.K_LEFT] = True
-
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_RIGHT:
-                    arrow_keys[pygame.K_RIGHT] = True
-
-                if event.type == pygame.KEYUP and event.key == pygame.K_UP:
-                    arrow_keys[pygame.K_UP] = False
-
-                if event.type == pygame.KEYUP and event.key == pygame.K_DOWN:
-                    arrow_keys[pygame.K_DOWN] = False
-
-                if event.type == pygame.KEYUP and event.key == pygame.K_LEFT:
-                    arrow_keys[pygame.K_LEFT] = False
-
-                if event.type == pygame.KEYUP and event.key == pygame.K_RIGHT:
-                    arrow_keys[pygame.K_RIGHT] = False
-
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                    if not toggle_fog:
-                        fog_enabled = not fog_enabled
-                        toggle_fog = True
-
-                if event.type == pygame.KEYUP and event.key == pygame.K_SPACE:
-                    if toggle_fog:
-                        toggle_fog = False
+                # Record wich keys were pressed and released this frame
+                try:
+                    if event.type == pygame.KEYDOWN:
+                        arrow_keys[event.key] = True
+                    if event.type == pygame.KEYUP:
+                        arrow_keys[event.key] = False
+                except KeyError:
+                    pass
             
             # Camera movement
             if arrow_keys[pygame.K_UP]:
@@ -269,28 +255,24 @@ def main():
                 r = Ray(vec2(player_pos.x, player_pos.y), vec2(player_dir.x + plane.x * camera_x, player_dir.y + plane.y * camera_x))
 
                 d = float('Inf')
-                c = (0, 0, 0)
+                c = None
+                # Check each wall for an intersection
                 for l in walls:
                     p = l.intersect(r)
                     if p is not None:
+                        # If an intersection was found then keep it if it's closer than the previous one
                         if p.d < d:
                             d = p.d
+                            c = l.get_tex_column(p.tc)
 
-                            def lerp(col, dst):
-                                lt = 0.0 if dst < FOG_NEAR else (1.0 if dst > FOG_FAR else (dst - FOG_NEAR) / (FOG_FAR - FOG_NEAR))
-
-                                red = (FOG_COLOR[0] * lt) + (col[0] * (1.0 - lt))
-                                green = (FOG_COLOR[1] * lt) + (col[1] * (1.0 - lt))
-                                blue = (FOG_COLOR[2] * lt) + (col[2] * (1.0 - lt))
-
-                                return (red, green, blue)
-
-                            c = lerp(l.color, d) if fog_enabled else l.color
-
-                if d < float('Inf'):
+                if d < float('Inf') and c is not None:
+                    # If an intersection was found then compute the projected height of the wall in pixels
                     h = int(float(FB_SIZE[1]) / (d * math.cos(angle * DEG2RAD)))
-                    h = FB_SIZE[1] if h > FB_SIZE[1] else h
-                    frame_buffer.fill(c, pygame.Rect(i, -(h / 2) + (FB_SIZE[1] / 2), 1, h))
+                    # The height tends to infinity as we get close to the walls so it must be clamped
+                    h = HEIGHT_CLAMP_MULTIPLER * FB_SIZE[1] if h > HEIGHT_CLAMP_MULTIPLER * FB_SIZE[1] else h
+                    # Then scale the corresponding texture slice and blit it
+                    scaled = pygame.transform.scale(c, (c.get_width(), h))
+                    frame_buffer.blit(scaled, (i, -(h / 2) + (FB_SIZE[1] / 2)))
 
                 angle += ANGLE_INCREMENT
 

@@ -2,4 +2,6 @@
 
 Ray Casting implementation with Pygame.
 
+Textures by She-Bob.
+
 [[./screenshot.png]]
