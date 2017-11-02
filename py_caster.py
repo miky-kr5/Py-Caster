@@ -7,7 +7,7 @@ import pygame
 ##############################################################
 
 TITLE         = "Py Caster"
-FPS           = 60
+FPS           = 30
 SCREEN_SIZE   = (800, 600)
 CEILING_COLOR = (75, 119, 208)
 FLOOR_COLOR   = (229, 138, 132)
@@ -15,6 +15,8 @@ FOG_COLOR     = (128, 128, 128)
 FOG_NEAR      = 1.0
 FOG_FAR       = 5.0
 TOLERANCE     = 0.000001
+FLOOR_TEXTURE = "Textures/goldlites.jpg"
+CEIL_TEXTURE  = "Textures/brownstone.jpg"
 
 ##############################################################
 # Projection parameters
@@ -37,18 +39,37 @@ PLAYER_MOVE_SPEED = 0.1
 # Vector Classes
 ##############################################################
 
-class vec3(object):
+class vec(object):
+    def __ini__(self):
+        pass
+
+    def length(self):
+        return math.sqrt(self.dot(self))
+    
+    def distance(self, p):
+        return p.sub(self).length()
+
+class vec3(vec):
     def __init__(self, x = 0, y = 0, z = 0):
         self.x = x
         self.y = y
         self.z = z
 
+    def __str__(self):
+        return "(" + str(self.x) + ", " + str(self.y) + ", " + str(self.z) + ")"
+        
+    def add(self, v):
+        return vec3(self.x + v.x, self.y + v.y, self.z + v.z)
+
+    def sub(self, v):
+        return vec3(self.x - v.x, self.y - v.y, self.z - v.z)
+
+    def scale(self, k):
+        return vec3(self.x * k, self.y * k, self.z * k)
+        
     def dot(self, v):
         return (self.x * v.x) + (self.y * v.y) + (self.z * v.z)
-
-    def length(self):
-        return math.sqrt(self.dot(self))
-
+    
     def normalize(self):
         norm = self.length()
         if norm > 0:
@@ -57,7 +78,10 @@ class vec3(object):
             self.z /= norm
         return self
 
-class vec2(object):
+    def mix(self, v, t):
+        return vec3((self.x * t) + (v.x * (1.0 - t)), (self.y * t) + (v.y * (1.0 - t)), (self.z * t) + (v.z * (1.0 - t)))
+
+class vec2(vec):
     def __init__(self, x = 0, y = 0):
         self.x = x
         self.y = y
@@ -76,12 +100,6 @@ class vec2(object):
 
     def dot(self, v):
         return (self.x * v.x) + (self.y * v.y)
-
-    def length(self):
-        return math.sqrt(self.dot(self))
-
-    def distance(self, p):
-        return p.sub(self).length()
 
     def normalize(self):
         norm = self.length()
@@ -108,15 +126,20 @@ class Ray(object):
     def __str__(self):
         return "Origin: " + str(self.o) + " :: Direction: " + str(self.d)
 
+class Ray3d(Ray):
+    def __init__(self, origin = vec3(0.0, 0.0, 0.0), direction = vec3(0.0, 0.0, 1.0)):
+        self.o = origin
+        self.d = direction.normalize()
+    
 ##############################################################
 # Intersection Class
 ##############################################################
 
 class Intersection(object):
-    def __init__(self, ray, point, tex_coord):
-        self.p = point
-        self.d = ray.o.distance(point)
-        self.tc = tex_coord
+    def __init__(self, r, t, tex_coord = None):
+        self.p = r.o.add(r.d.scale(t))
+        self.d = r.o.distance(self.p)
+        self.tc = tex_coord if tex_coord is not None else vec2(self.p.x, self.p.z)
 
 ##############################################################
 # Line Segment Class
@@ -161,7 +184,7 @@ class LineSegment(object):
             t2 = v1.dot(v3) / det
 
             if t2 >= 0.0 and t2 <= 1.0 and t1 > 0.0:
-                return Intersection(r, r.o.add(r.d.scale(t1)), lerp(self.tca, self.tcb, t2))
+                return Intersection(r, t1, lerp(self.tca, self.tcb, t2))
             else:
                 return None
 
@@ -172,7 +195,34 @@ class LineSegment(object):
         _s = int(_s % w)
         # Creating a subsurface is pretty fast in pygame, no copying of pixels is needed
         return self.texture.subsurface(pygame.Rect(_s, 0, 1, h))
+    
+##############################################################
+# Plane3D class
+##############################################################
+    
+class Plane3d(object):
+    def __init__(self, texture, floor = True):
+        self.n = vec3(0.0, 1.0, 0.0) if floor else vec3(0.0, -1.0, 0.0)
+        self.y = -0.5 if floor else 0.5
+        self.texture = pygame.image.load(texture)
 
+    def intersect(self, r):
+        d = r.d.dot(self.n)
+        if abs(d) > TOLERANCE:
+            t = self.n.dot(vec3(0.0, self.y, 0.0).sub(r.o)) / d
+            return Intersection(r, t)
+        else:
+            return None
+
+    def sample_texture(self, st):
+        w = self.texture.get_width()
+        h = self.texture.get_height()
+        s = st.x * w if st.x >= 0.0 else (1.0 - (math.ceil(st.x) - st.x)) * w
+        s = int(s % w)
+        t = st.y * h if st.y >= 0.0 else (1.0 - (math.ceil(st.y) - st.y)) * h
+        t = int(t % h)
+        return self.texture.subsurface(pygame.Rect(s, t, 1, 1))
+    
 ##############################################################
 # Main Function
 ##############################################################
@@ -193,12 +243,17 @@ def main():
     pygame.mouse.set_visible(False)
     pygame.key.set_repeat(17, 17)
 
-    # Define walls.
-    walls = [LineSegment(vec2(-3.0, 3.0), vec2(3.0, 3.0), -3.0, 3.0, "Textures/brownstone.jpg"),
-             LineSegment(vec2(3.0, 3.0), vec2(3.0, -3.0), 0.0, 6.0, "Textures/diagmetal.jpg"),
-             LineSegment(vec2(1.5, 1.5), vec2(3.0, 3.0), 0.0, 1.5, "Textures/goldlites.jpg"),
+    # Define walls, floor and ceiling.
+    walls = [LineSegment(vec2(-3.0, 3.0), vec2(3.0, 3.0), -3.0, 3.0, "Textures/metal.jpg"),
+             LineSegment(vec2(3.0, 3.0), vec2(3.0, -3.0), 0.0, 6.0, "Textures/metal.jpg"),
              LineSegment(vec2(3.0, -3.0), vec2(-3.0, -3.0), 0.0, 6.0, "Textures/metal.jpg"),
-             LineSegment(vec2(-3.0, -3.0), vec2(-3.0, 3.0), 0.0, 6.0, "Textures/orangetiles.jpg")]
+             LineSegment(vec2(-3.0, -3.0), vec2(-3.0, 3.0), 0.0, 6.0, "Textures/metal.jpg"),
+             LineSegment(vec2(2.0, 2.0), vec2(3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
+             LineSegment(vec2(-2.0, 2.0), vec2(-3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
+             LineSegment(vec2(-2.0, 2.0), vec2(2.0, 2.0), 0.0, 4.0, "Textures/diagmetal.jpg")
+    ]
+    floor = Plane3d(FLOOR_TEXTURE)
+    ceiln = Plane3d(CEIL_TEXTURE, False)
 
     # Main game loop.
     try:
@@ -256,14 +311,17 @@ def main():
 
                 d = float('Inf')
                 c = None
+                p = None
+                h = 0
                 # Check each wall for an intersection
                 for l in walls:
-                    p = l.intersect(r)
-                    if p is not None:
+                    intersection = l.intersect(r)
+                    if intersection is not None:
                         # If an intersection was found then keep it if it's closer than the previous one
-                        if p.d < d:
-                            d = p.d
-                            c = l.get_tex_column(p.tc)
+                        if intersection.d < d:
+                            d = intersection.d
+                            c = l.get_tex_column(intersection.tc)
+                            p = intersection.p
 
                 if d < float('Inf') and c is not None:
                     # If an intersection was found then compute the projected height of the wall in pixels
@@ -274,8 +332,37 @@ def main():
                     scaled = pygame.transform.scale(c, (c.get_width(), h))
                     frame_buffer.blit(scaled, (i, -(h / 2) + (FB_SIZE[1] / 2)))
 
-                angle += ANGLE_INCREMENT
+                # Floor casting and ceiling casting
+                if p is not None and h > 0 and h < FB_SIZE[1]:
+                    for j in xrange(1, FB_SIZE[1] - h):
+                        # Compute wall height in world space
+                        h_world = float((h + j)) / float(FB_SIZE[1])
 
+                        # Take player position and starting floor intersection point to 3D space
+                        o3d = vec3(player_pos.x, 0.0, player_pos.y)
+                        p3d = vec3(p.x, -h_world/2.0, p.y)
+                        
+                        # Compute floor ray
+                        fr = Ray3d(o3d, p3d.sub(o3d))
+
+                        # Compute ceiling starting intersection point and ceiling ray
+                        p3d = vec3(p.x, h_world/2.0, p.y)
+                        cr = Ray3d(o3d, p3d.sub(o3d))
+
+                        # Compute floor and ceiling intersections
+                        fip = floor.intersect(fr)
+                        cip = ceiln.intersect(cr)
+                        
+                        # Get floor and ceiling textures
+                        ftex = floor.sample_texture(fip.tc)
+                        ctex = ceiln.sample_texture(cip.tc)
+
+                        # Blit floor and ceiling colors to the framebuffer
+                        frame_buffer.blit(ftex, (i, ((h + j) / 2) + (FB_SIZE[1] / 2)))
+                        frame_buffer.blit(ctex, (i, -((h + j) / 2) + (FB_SIZE[1] / 2)))
+                        
+                angle += ANGLE_INCREMENT
+                
             # Render framebuffer to the screen
             pygame.transform.scale(frame_buffer, SCREEN_SIZE, screen)
 
