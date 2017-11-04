@@ -43,9 +43,15 @@ class vec(object):
 
     def length(self):
         return math.sqrt(self.dot(self))
+
+    def lengthSQ(self):
+        return self.dot(self)
     
     def distance(self, p):
         return p.sub(self).length()
+
+    def distanceSQ(self, p):
+        return p.sub(self).lengthSQ()
 
 class vec3(vec):
     def __init__(self, x = 0, y = 0, z = 0):
@@ -123,11 +129,6 @@ class Ray(object):
 
     def __str__(self):
         return "Origin: " + str(self.o) + " :: Direction: " + str(self.d)
-
-class Ray3d(Ray):
-    def __init__(self, origin = vec3(0.0, 0.0, 0.0), direction = vec3(0.0, 0.0, 1.0)):
-        self.o = origin
-        self.d = direction.normalize()
     
 ##############################################################
 # Intersection Class
@@ -137,7 +138,7 @@ class Intersection(object):
     def __init__(self, r, t, tex_coord = None):
         self.p = r.o.add(r.d.scale(t))
         self.d = r.o.distance(self.p)
-        self.tc = tex_coord if tex_coord is not None else vec2(self.p.x, self.p.z)
+        self.tc = tex_coord
 
 ##############################################################
 # Line Segment Class
@@ -151,7 +152,7 @@ class LineSegment(object):
         self.n = vec2(-self.v.y, self.v.x)
         self.tca = tca
         self.tcb = tcb
-        self.texture = pygame.image.load(texture)
+        self.texture = pygame.image.load(texture).convert()
 
     def intersect(self, r):
         def classifyPoint2D(point):
@@ -200,7 +201,7 @@ class LineSegment(object):
     
 class Plane3d(object):
     def __init__(self, texture):
-        self.texture = pygame.image.load(texture)
+        self.texture = pygame.image.load(texture).convert()
 
     def sample_texture(self, st):
         w = self.texture.get_width()
@@ -210,7 +211,22 @@ class Plane3d(object):
         t = st.y * h if st.y >= 0.0 else (1.0 - (math.ceil(st.y) - st.y)) * h
         t = int(t % h)
         return pygame.Rect(s, t, 1, 1)
+
+##############################################################
+# Sprite class
+##############################################################
     
+class Sprite(object):
+    def __init__(self, position, texture):
+        self.p = position
+        self.d = 0.0
+        self.texture = pygame.image.load(texture).convert_alpha()
+
+    def sample_texture(self, s):
+        _s = s % self.texture.get_width()
+        # Creating a subsurface is pretty fast in pygame, no copying of pixels is needed
+        return self.texture.subsurface(pygame.Rect(_s, 0, 1, self.texture.get_height()))
+
 ##############################################################
 # Main Function
 ##############################################################
@@ -244,10 +260,17 @@ def main():
         LineSegment(vec2(-3.0, -3.0), vec2(-3.0, 3.0), 0.0, 6.0, "Textures/metal.jpg"),
         LineSegment(vec2(2.0, 2.0), vec2(3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
         LineSegment(vec2(-2.0, 2.0), vec2(-3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
-        LineSegment(vec2(-2.0, 2.0), vec2(2.0, 2.0), 0.0, 4.0, "Textures/diagmetal.jpg")
+        LineSegment(vec2(-2.0, 2.0), vec2(2.0, 2.0), 0.0, 4.0, "Textures/diagmetal.jpg"),
+        LineSegment(vec2(-0.5, -1.0), vec2(-0.5, -3.0), 0.0, 1.0, "Textures/orangetiles.jpg"),
+        LineSegment(vec2(-0.5, -1.0), vec2(0.5, -1.0), 0.0, 1.0, "Textures/orangetiles.jpg"),
+        LineSegment(vec2(0.5, -1.0), vec2(0.5, -3.0), 0.0, 1.0, "Textures/orangetiles.jpg")
     ]
     floor = Plane3d(FLOOR_TEXTURE)
     ceiln = Plane3d(CEIL_TEXTURE)
+    sprites = [
+        Sprite(vec2(-1.5, -2.0), "Textures/bag.png"),
+        Sprite(vec2(1.5, -2.0), "Textures/bag.png")
+    ]
 
     # Main game loop.
     try:
@@ -257,6 +280,7 @@ def main():
             
             # Input capture.
             for event in pygame.event.get():
+                # Quit on escape key or window close
                 if (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE) or event.type == pygame.QUIT:
                     done = True
 
@@ -277,6 +301,7 @@ def main():
                 player_pos = player_pos.sub(player_dir.scale(PLAYER_MOVE_SPEED))
 
             if arrow_keys[pygame.K_LEFT]:
+                # Apply a rotation matrix to the view and projection vectors
                 oldDirX = player_dir.x;
                 player_dir.x = player_dir.x * math.cos(PLAYER_TURN_SPEED) - player_dir.y * math.sin(PLAYER_TURN_SPEED);
                 player_dir.y = oldDirX * math.sin(PLAYER_TURN_SPEED) + player_dir.y * math.cos(PLAYER_TURN_SPEED);
@@ -285,6 +310,7 @@ def main():
                 plane.y = oldPlaneX * math.sin(PLAYER_TURN_SPEED) + plane.y * math.cos(PLAYER_TURN_SPEED);
 
             if arrow_keys[pygame.K_RIGHT]:
+                # Apply a rotation matrix to the view and projection vectors
                 oldDirX = player_dir.x;
                 player_dir.x = player_dir.x * math.cos(-PLAYER_TURN_SPEED) - player_dir.y * math.sin(-PLAYER_TURN_SPEED);
                 player_dir.y = oldDirX * math.sin(-PLAYER_TURN_SPEED) + player_dir.y * math.cos(-PLAYER_TURN_SPEED);
@@ -321,8 +347,10 @@ def main():
                 if c is not None:
                     # If an intersection was found then compute the projected height of the wall in pixels
                     h = int(float(FB_SIZE[1]) / (d * math.cos(angle * DEG2RAD)))
+
                     # The height tends to infinity as we get close to the walls so it must be clamped
                     h = HEIGHT_CLAMP_MULTIPLER * FB_SIZE[1] if h > HEIGHT_CLAMP_MULTIPLER * FB_SIZE[1] else h
+
                     # Then scale the corresponding texture slice and blit it
                     scaled = pygame.transform.scale(c, (c.get_width(), h))
                     frame_buffer.blit(scaled, (i, -(h / 2) + (FB_SIZE[1] / 2)))
@@ -361,7 +389,69 @@ def main():
                             frame_buffer.fill((depth, depth, depth), pygame.Rect(i, FB_SIZE[1] - j, 1, 1), pygame.BLEND_MULT)
 
                 angle += ANGLE_INCREMENT
-                
+            
+            # Sort the sprites by distance
+            for s in sprites:
+                s.d = player_pos.distanceSQ(s.p)
+            sprites.sort(key = lambda s: s.d, reverse = True)
+    
+            # Render the sprites
+            for s in sprites:
+                # Take sprite to eye space
+                sp_eye = s.p.sub(player_pos)
+
+                # Apply inverse camera matrix to sp_eye
+                inv_det = 1.0 / ((plane.x * player_dir.y) - (player_dir.x * plane.y))
+                tx = inv_det * ((player_dir.y * sp_eye.x) - (player_dir.x * sp_eye.y))
+                ty = inv_det * ((-plane.y * sp_eye.x) + (plane.x * sp_eye.y))
+
+                # If the sprite is behind the eye there is no need to continue with this sprite
+                if ty <= 0.0:
+                    continue
+
+                # Compute sprite x position in image space, width and height
+                sp_screen_x = int((FB_SIZE[0] / 2) * (1.0 + (tx / ty)))
+                sh = int(abs(FB_SIZE[1] / ty))
+                sw = sh # The sprites are always square
+
+                # Compute draw rows
+                draw_start_y = int((-sh / 2) + (FB_SIZE[1] / 2))
+                draw_start_y = 0 if draw_start_y < 0 else draw_start_y
+                draw_end_y = int((sh / 2) + (FB_SIZE[1] / 2))
+                draw_end_y = FB_SIZE[1] - 1 if draw_end_y >= FB_SIZE[1] else draw_end_y
+
+                # Compute draw cols
+                draw_start_x = int((-sw / 2) + sp_screen_x)
+                draw_start_x = 0 if draw_start_x < 0 else draw_start_x
+                draw_end_x = int((sw / 2) + sp_screen_x)
+                draw_end_x = FB_SIZE[0] if draw_end_x >= FB_SIZE[0] else draw_end_x
+
+                # Draw columns
+                tw = s.texture.get_width()
+                for i in xrange(draw_start_x, draw_end_x):
+                    # Compute tex coord of sprite slice
+                    tc = int((i - (-sw / 2 + sp_screen_x)) * tw / sw)
+
+                    # Draw only if the sprite slice is actually inside the screen and there are no walls in front of it
+                    if i >= 0 and i < FB_SIZE[0] and ty < depth_buffer[i]:
+                        # Get texture slice and scale it to it's on-screen height
+                        c = s.sample_texture(tc)
+                        scaled = pygame.transform.scale(c, (c.get_width(), sh))
+
+                        # Darken the texture by distance
+                        _d = (ty if ty < FAR else FAR) / FAR
+                        depth = 255 - int(_d * 255)
+                        scaled.fill((depth, depth, depth, 1.0),
+                                    pygame.Rect(0,
+                                                0,
+                                                1, 
+                                                sh),
+                                    pygame.BLEND_MULT
+                        )
+                        
+                        # Draw the sprite
+                        frame_buffer.blit(scaled, (i, draw_start_y))
+
             # Render framebuffer to the screen
             pygame.transform.scale(frame_buffer, SCREEN_SIZE, screen)
 
