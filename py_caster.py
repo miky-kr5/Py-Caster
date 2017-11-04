@@ -209,7 +209,7 @@ class Plane3d(object):
         s = int(s % w)
         t = st.y * h if st.y >= 0.0 else (1.0 - (math.ceil(st.y) - st.y)) * h
         t = int(t % h)
-        return self.texture.subsurface(pygame.Rect(s, t, 1, 1))
+        return pygame.Rect(s, t, 1, 1)
     
 ##############################################################
 # Main Function
@@ -339,7 +339,7 @@ def main():
 
                 # Floor casting and ceiling casting
                 if p is not None and h > 0 and h < FB_SIZE[1]:
-                    for j in xrange((h / 2) + (FB_SIZE[1] / 2), FB_SIZE[1] + 1): #FB_SIZE[1] - h + 1
+                    for j in xrange((h / 2) + (FB_SIZE[1] / 2), FB_SIZE[1] + 1):
                         det = (2.0 * j - FB_SIZE[1])
                         if det > 0.0:
                             cd = FB_SIZE[1] / det
@@ -351,8 +351,8 @@ def main():
                             ctex = ceiln.sample_texture(st)
 
                             # Draw floor and ceiling
-                            frame_buffer.blit(ftex, (i, j))
-                            frame_buffer.blit(ctex, (i, FB_SIZE[1] - j))
+                            frame_buffer.blit(floor.texture, (i, j), ftex)
+                            frame_buffer.blit(ceiln.texture, (i, FB_SIZE[1] - j), ctex)
 
                             # Darken floor and ceiling according to distance
                             _d = (cd if cd < FAR else FAR) / FAR
