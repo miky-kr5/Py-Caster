@@ -10,9 +10,7 @@ TITLE         = "Py Caster"
 FPS           = 30
 SCREEN_SIZE   = (800, 600)
 FILL_COLOR = (0, 0, 0)
-FOG_COLOR     = (128, 128, 128)
-FOG_NEAR      = 1.0
-FOG_FAR       = 5.0
+FAR = 5.0
 TOLERANCE     = 0.000001
 FLOOR_TEXTURE = "Textures/goldlites.jpg"
 CEIL_TEXTURE  = "Textures/brownstone.jpg"
@@ -219,14 +217,17 @@ class Plane3d(object):
 
 def main():
     global FOV, ANGLE_INCREMENT
+
     # Local variables.
     done = False
     player_pos = vec2(0.0, 0.0)
     player_dir = vec2(-1.0, 0.0)
     plane = vec2(0.0, 0.66)
+    arrow_keys = {pygame.K_UP: False, pygame.K_DOWN: False, pygame.K_LEFT: False, pygame.K_RIGHT: False}
+
+    # Update global variables
     FOV = 2.0 * math.atan((plane.length() / player_dir.length())) * RAD2DEG
     ANGLE_INCREMENT = FOV / float(FB_SIZE[0])
-    arrow_keys = {pygame.K_UP: False, pygame.K_DOWN: False, pygame.K_LEFT: False, pygame.K_RIGHT: False}
 
     # Initialize Pygame.
     pygame.init()
@@ -296,6 +297,7 @@ def main():
 
             # Render walls.
             angle = -FOV / 2.0
+            depth_buffer = [0 for x in xrange(FB_SIZE[0])]
             for i in xrange(FB_SIZE[0]):
                 # Generate camera ray
                 camera_x = 2.0 * (float(i) / float(FB_SIZE[0])) - 1;
@@ -305,7 +307,6 @@ def main():
                 c = None
                 p = None
                 h = 0
-                darken = None
                 # Check each wall for an intersection
                 for l in walls:
                     intersection = l.intersect(r)
@@ -315,15 +316,7 @@ def main():
                             d = intersection.d
                             c = l.get_tex_column(intersection.tc)
                             p = intersection.p
-                            df = (vec2(1.0, 0.0).dot(l.n) + 1.0) / 2.0
-                            if df < 0.25:
-                                darken = 32
-                            elif df >= 0.25 and df < 0.5:
-                                darken = 64
-                            elif df >= 0.5 and df < 0.75:
-                                darken = 128
-                            else:
-                                darken = 255
+                            depth_buffer[i] = d
 
                 if c is not None:
                     # If an intersection was found then compute the projected height of the wall in pixels
@@ -333,7 +326,16 @@ def main():
                     # Then scale the corresponding texture slice and blit it
                     scaled = pygame.transform.scale(c, (c.get_width(), h))
                     frame_buffer.blit(scaled, (i, -(h / 2) + (FB_SIZE[1] / 2)))
-                    frame_buffer.fill((darken, darken, darken), pygame.Rect(i, -(h / 2) + (FB_SIZE[1] / 2) if -(h / 2) + (FB_SIZE[1] / 2) >= 0 else 0, 1, scaled.get_height()), pygame.BLEND_MULT)
+
+                    # Darken wall according to distance
+                    _d = (d if d < FAR else FAR) / FAR
+                    depth = 255 - int(_d * 255)
+                    frame_buffer.fill((depth, depth, depth),
+                                      pygame.Rect(i,
+                                                  -(h / 2) + (FB_SIZE[1] / 2) if -(h / 2) + (FB_SIZE[1] / 2) >= 0 else 0,
+                                                  1, 
+                                                  scaled.get_height() if scaled.get_height() < FB_SIZE[1] else FB_SIZE[1] - 1),
+                                      pygame.BLEND_MULT)
 
                 # Floor casting and ceiling casting
                 if p is not None and h > 0 and h < FB_SIZE[1]:
@@ -343,11 +345,20 @@ def main():
                             cd = FB_SIZE[1] / det
                             weight = cd / (d * math.cos(angle * DEG2RAD))
                             st = vec2((weight * p.x) + ((1.0 - weight) * player_pos.x), (weight * p.y) + ((1.0 - weight) * player_pos.y))
+
+                            # Sample floor and ceiling texture
                             ftex = floor.sample_texture(st)
                             ctex = ceiln.sample_texture(st)
+
+                            # Draw floor and ceiling
                             frame_buffer.blit(ftex, (i, j))
-                            frame_buffer.fill((192, 192, 192), pygame.Rect(i, j, 1, 1), pygame.BLEND_MULT)
                             frame_buffer.blit(ctex, (i, FB_SIZE[1] - j))
+
+                            # Darken floor and ceiling according to distance
+                            _d = (cd if cd < FAR else FAR) / FAR
+                            depth = 255 - int(_d * 255)
+                            frame_buffer.fill((depth, depth, depth), pygame.Rect(i, j, 1, 1), pygame.BLEND_MULT)
+                            frame_buffer.fill((depth, depth, depth), pygame.Rect(i, FB_SIZE[1] - j, 1, 1), pygame.BLEND_MULT)
 
                 angle += ANGLE_INCREMENT
                 
