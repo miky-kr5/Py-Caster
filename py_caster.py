@@ -9,8 +9,7 @@ import pygame
 TITLE         = "Py Caster"
 FPS           = 30
 SCREEN_SIZE   = (800, 600)
-CEILING_COLOR = (75, 119, 208)
-FLOOR_COLOR   = (229, 138, 132)
+FILL_COLOR = (0, 0, 0)
 FOG_COLOR     = (128, 128, 128)
 FOG_NEAR      = 1.0
 FOG_FAR       = 5.0
@@ -24,8 +23,9 @@ CEIL_TEXTURE  = "Textures/brownstone.jpg"
 
 FB_SIZE                = (320, 200)
 DEG2RAD                = 3.1415926535897932384626433 / 180.0
-FOV                    = 66.84962236520761
-ANGLE_INCREMENT        = FOV / float(FB_SIZE[0])
+RAD2DEG                = 180.0 / 3.1415926535897932384626433
+FOV                    = 0.0
+ANGLE_INCREMENT        = 0.0
 HEIGHT_CLAMP_MULTIPLER = 10 # MUST BE AN INTEGER
 
 ##############################################################
@@ -150,6 +150,7 @@ class LineSegment(object):
         self.a = a
         self.b = b
         self.v = b.sub(a).normalize()
+        self.n = vec2(-self.v.y, self.v.x)
         self.tca = tca
         self.tcb = tcb
         self.texture = pygame.image.load(texture)
@@ -157,8 +158,7 @@ class LineSegment(object):
     def intersect(self, r):
         def classifyPoint2D(point):
             v1 = point.sub(self.a).normalize()
-            v2 = vec2(self.v.y, -self.v.x)
-            return v1.dot(v2)
+            return v1.dot(self.n)
 
         def sign(n):
             if n == 0:
@@ -172,14 +172,14 @@ class LineSegment(object):
             return (a * t) + (b * (1.0 - t))
 
         side = classifyPoint2D(r.o)
-        v2 = self.b.sub(self.a) if sign(side) > 0 else self.a.sub(self.b)
-        v3 = vec2(-r.d.y, r.d.x)
+        v2 = self.b.sub(self.a)
+        v3 = vec2(-r.d.y, r.d.x) if sign(side) > 0 else vec2(r.d.y, -r.d.x)
         det = v2.dot(v3)
 
         if abs(det) < TOLERANCE:
             return None
         else:
-            v1 = r.o.sub(self.a) if sign(side) > 0 else self.a.sub(r.o)
+            v1 = r.o.sub(self.a)
             t1 = v2.cross(v1).length() / det
             t2 = v1.dot(v3) / det
 
@@ -201,18 +201,8 @@ class LineSegment(object):
 ##############################################################
     
 class Plane3d(object):
-    def __init__(self, texture, floor = True):
-        self.n = vec3(0.0, 1.0, 0.0) if floor else vec3(0.0, -1.0, 0.0)
-        self.y = -0.5 if floor else 0.5
+    def __init__(self, texture):
         self.texture = pygame.image.load(texture)
-
-    def intersect(self, r):
-        d = r.d.dot(self.n)
-        if abs(d) > TOLERANCE:
-            t = self.n.dot(vec3(0.0, self.y, 0.0).sub(r.o)) / d
-            return Intersection(r, t)
-        else:
-            return None
 
     def sample_texture(self, st):
         w = self.texture.get_width()
@@ -228,11 +218,14 @@ class Plane3d(object):
 ##############################################################
 
 def main():
+    global FOV, ANGLE_INCREMENT
     # Local variables.
     done = False
     player_pos = vec2(0.0, 0.0)
     player_dir = vec2(-1.0, 0.0)
     plane = vec2(0.0, 0.66)
+    FOV = 2.0 * math.atan((plane.length() / player_dir.length())) * RAD2DEG
+    ANGLE_INCREMENT = FOV / float(FB_SIZE[0])
     arrow_keys = {pygame.K_UP: False, pygame.K_DOWN: False, pygame.K_LEFT: False, pygame.K_RIGHT: False}
 
     # Initialize Pygame.
@@ -244,16 +237,16 @@ def main():
     pygame.key.set_repeat(17, 17)
 
     # Define walls, floor and ceiling.
-    walls = [LineSegment(vec2(-3.0, 3.0), vec2(3.0, 3.0), -3.0, 3.0, "Textures/metal.jpg"),
-             LineSegment(vec2(3.0, 3.0), vec2(3.0, -3.0), 0.0, 6.0, "Textures/metal.jpg"),
-             LineSegment(vec2(3.0, -3.0), vec2(-3.0, -3.0), 0.0, 6.0, "Textures/metal.jpg"),
-             LineSegment(vec2(-3.0, -3.0), vec2(-3.0, 3.0), 0.0, 6.0, "Textures/metal.jpg"),
-             LineSegment(vec2(2.0, 2.0), vec2(3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
-             LineSegment(vec2(-2.0, 2.0), vec2(-3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
-             LineSegment(vec2(-2.0, 2.0), vec2(2.0, 2.0), 0.0, 4.0, "Textures/diagmetal.jpg")
+    walls = [
+        LineSegment(vec2(3.0, 3.0), vec2(3.0, -3.0), 0.0, 6.0, "Textures/metal.jpg"),
+        LineSegment(vec2(3.0, -3.0), vec2(-3.0, -3.0), 0.0, 6.0, "Textures/metal.jpg"),
+        LineSegment(vec2(-3.0, -3.0), vec2(-3.0, 3.0), 0.0, 6.0, "Textures/metal.jpg"),
+        LineSegment(vec2(2.0, 2.0), vec2(3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
+        LineSegment(vec2(-2.0, 2.0), vec2(-3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
+        LineSegment(vec2(-2.0, 2.0), vec2(2.0, 2.0), 0.0, 4.0, "Textures/diagmetal.jpg")
     ]
     floor = Plane3d(FLOOR_TEXTURE)
-    ceiln = Plane3d(CEIL_TEXTURE, False)
+    ceiln = Plane3d(CEIL_TEXTURE)
 
     # Main game loop.
     try:
@@ -277,10 +270,10 @@ def main():
             
             # Camera movement
             if arrow_keys[pygame.K_UP]:
-                player_pos = player_pos.sub(player_dir.scale(PLAYER_MOVE_SPEED))
+                player_pos = player_pos.add(player_dir.scale(PLAYER_MOVE_SPEED))
 
             if arrow_keys[pygame.K_DOWN]:
-                player_pos = player_pos.add(player_dir.scale(PLAYER_MOVE_SPEED))
+                player_pos = player_pos.sub(player_dir.scale(PLAYER_MOVE_SPEED))
 
             if arrow_keys[pygame.K_LEFT]:
                 oldDirX = player_dir.x;
@@ -299,20 +292,20 @@ def main():
                 plane.y = oldPlaneX * math.sin(-PLAYER_TURN_SPEED) + plane.y * math.cos(-PLAYER_TURN_SPEED);
 
             # Render ceiling and floor.
-            frame_buffer.fill(CEILING_COLOR, pygame.Rect(0, 0, FB_SIZE[0], FB_SIZE[1] / 2))
-            frame_buffer.fill(FLOOR_COLOR, pygame.Rect(0, FB_SIZE[1] / 2, FB_SIZE[0], FB_SIZE[1] / 2))
+            frame_buffer.fill(FILL_COLOR)
 
             # Render walls.
             angle = -FOV / 2.0
             for i in xrange(FB_SIZE[0]):
                 # Generate camera ray
                 camera_x = 2.0 * (float(i) / float(FB_SIZE[0])) - 1;
-                r = Ray(vec2(player_pos.x, player_pos.y), vec2(player_dir.x + plane.x * camera_x, player_dir.y + plane.y * camera_x))
+                r = Ray(vec2(player_pos.x, player_pos.y), player_dir.add(plane.scale(camera_x)))
 
                 d = float('Inf')
                 c = None
                 p = None
                 h = 0
+                darken = None
                 # Check each wall for an intersection
                 for l in walls:
                     intersection = l.intersect(r)
@@ -322,8 +315,17 @@ def main():
                             d = intersection.d
                             c = l.get_tex_column(intersection.tc)
                             p = intersection.p
+                            df = (vec2(1.0, 0.0).dot(l.n) + 1.0) / 2.0
+                            if df < 0.25:
+                                darken = 32
+                            elif df >= 0.25 and df < 0.5:
+                                darken = 64
+                            elif df >= 0.5 and df < 0.75:
+                                darken = 128
+                            else:
+                                darken = 255
 
-                if d < float('Inf') and c is not None:
+                if c is not None:
                     # If an intersection was found then compute the projected height of the wall in pixels
                     h = int(float(FB_SIZE[1]) / (d * math.cos(angle * DEG2RAD)))
                     # The height tends to infinity as we get close to the walls so it must be clamped
@@ -331,36 +333,22 @@ def main():
                     # Then scale the corresponding texture slice and blit it
                     scaled = pygame.transform.scale(c, (c.get_width(), h))
                     frame_buffer.blit(scaled, (i, -(h / 2) + (FB_SIZE[1] / 2)))
+                    frame_buffer.fill((darken, darken, darken), pygame.Rect(i, -(h / 2) + (FB_SIZE[1] / 2) if -(h / 2) + (FB_SIZE[1] / 2) >= 0 else 0, 1, scaled.get_height()), pygame.BLEND_MULT)
 
                 # Floor casting and ceiling casting
                 if p is not None and h > 0 and h < FB_SIZE[1]:
-                    for j in xrange(1, FB_SIZE[1] - h):
-                        # Compute wall height in world space
-                        h_world = float((h + j)) / float(FB_SIZE[1])
+                    for j in xrange((h / 2) + (FB_SIZE[1] / 2), FB_SIZE[1] + 1): #FB_SIZE[1] - h + 1
+                        det = (2.0 * j - FB_SIZE[1])
+                        if det > 0.0:
+                            cd = FB_SIZE[1] / det
+                            weight = cd / (d * math.cos(angle * DEG2RAD))
+                            st = vec2((weight * p.x) + ((1.0 - weight) * player_pos.x), (weight * p.y) + ((1.0 - weight) * player_pos.y))
+                            ftex = floor.sample_texture(st)
+                            ctex = ceiln.sample_texture(st)
+                            frame_buffer.blit(ftex, (i, j))
+                            frame_buffer.fill((192, 192, 192), pygame.Rect(i, j, 1, 1), pygame.BLEND_MULT)
+                            frame_buffer.blit(ctex, (i, FB_SIZE[1] - j))
 
-                        # Take player position and starting floor intersection point to 3D space
-                        o3d = vec3(player_pos.x, 0.0, player_pos.y)
-                        p3d = vec3(p.x, -h_world/2.0, p.y)
-                        
-                        # Compute floor ray
-                        fr = Ray3d(o3d, p3d.sub(o3d))
-
-                        # Compute ceiling starting intersection point and ceiling ray
-                        p3d = vec3(p.x, h_world/2.0, p.y)
-                        cr = Ray3d(o3d, p3d.sub(o3d))
-
-                        # Compute floor and ceiling intersections
-                        fip = floor.intersect(fr)
-                        cip = ceiln.intersect(cr)
-                        
-                        # Get floor and ceiling textures
-                        ftex = floor.sample_texture(fip.tc)
-                        ctex = ceiln.sample_texture(cip.tc)
-
-                        # Blit floor and ceiling colors to the framebuffer
-                        frame_buffer.blit(ftex, (i, ((h + j) / 2) + (FB_SIZE[1] / 2)))
-                        frame_buffer.blit(ctex, (i, -((h + j) / 2) + (FB_SIZE[1] / 2)))
-                        
                 angle += ANGLE_INCREMENT
                 
             # Render framebuffer to the screen
