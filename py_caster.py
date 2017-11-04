@@ -261,9 +261,9 @@ def main():
         LineSegment(vec2(2.0, 2.0), vec2(3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
         LineSegment(vec2(-2.0, 2.0), vec2(-3.0, 3.0), 0.0, 1.0, "Textures/diagmetal.jpg"),
         LineSegment(vec2(-2.0, 2.0), vec2(2.0, 2.0), 0.0, 4.0, "Textures/diagmetal.jpg"),
-        LineSegment(vec2(-0.5, -1.0), vec2(-0.5, -3.0), 0.0, 1.0, "Textures/orangetiles.jpg"),
+        LineSegment(vec2(-0.5, -1.0), vec2(-1.5, -3.0), vec2(-1.5, -3.0).sub(vec2(-0.5, -1.0)).length(), 0.0, "Textures/orangetiles.jpg"),
         LineSegment(vec2(-0.5, -1.0), vec2(0.5, -1.0), 0.0, 1.0, "Textures/orangetiles.jpg"),
-        LineSegment(vec2(0.5, -1.0), vec2(0.5, -3.0), 0.0, 1.0, "Textures/orangetiles.jpg")
+        LineSegment(vec2(0.5, -1.0), vec2(1.5, -3.0), vec2(1.5, -3.0).sub(vec2(0.5, -1.0)).length(), 0.0, "Textures/orangetiles.jpg")
     ]
     floor = Plane3d(FLOOR_TEXTURE)
     ceiln = Plane3d(CEIL_TEXTURE)
