@@ -239,7 +239,16 @@ def main():
     player_pos = vec2(0.0, 0.0)
     player_dir = vec2(-1.0, 0.0)
     plane = vec2(0.0, 0.66)
-    arrow_keys = {pygame.K_UP: False, pygame.K_DOWN: False, pygame.K_LEFT: False, pygame.K_RIGHT: False}
+    arrow_keys = {
+        pygame.K_UP: False,
+        pygame.K_DOWN: False, 
+        pygame.K_LEFT: False, 
+        pygame.K_RIGHT: False,
+        pygame.K_w: False,
+        pygame.K_a: False,
+        pygame.K_s: False,
+        pygame.K_d: False
+    }
 
     # Update global variables
     FOV = 2.0 * math.atan((plane.length() / player_dir.length())) * RAD2DEG
@@ -294,11 +303,19 @@ def main():
                     pass
             
             # Camera movement
-            if arrow_keys[pygame.K_UP]:
+            if arrow_keys[pygame.K_UP] or arrow_keys[pygame.K_w]:
                 player_pos = player_pos.add(player_dir.scale(PLAYER_MOVE_SPEED))
 
-            if arrow_keys[pygame.K_DOWN]:
+            if arrow_keys[pygame.K_DOWN] or arrow_keys[pygame.K_s]:
                 player_pos = player_pos.sub(player_dir.scale(PLAYER_MOVE_SPEED))
+
+            if arrow_keys[pygame.K_a]:
+                perp = vec2(-player_dir.y, player_dir.x).normalize()
+                player_pos = player_pos.add(perp.scale(PLAYER_MOVE_SPEED))
+
+            if arrow_keys[pygame.K_d]:
+                perp = vec2(player_dir.y, -player_dir.x).normalize()
+                player_pos = player_pos.add(perp.scale(PLAYER_MOVE_SPEED))
 
             if arrow_keys[pygame.K_LEFT]:
                 # Apply a rotation matrix to the view and projection vectors
