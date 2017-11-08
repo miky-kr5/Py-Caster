@@ -14,6 +14,7 @@ FAR = 5.0
 TOLERANCE     = 0.000001
 FLOOR_TEXTURE = "Textures/goldlites.jpg"
 CEIL_TEXTURE  = "Textures/brownstone.jpg"
+SKY_TEXTURE   = "Textures/starynight.png"
 
 ##############################################################
 # Projection parameters
@@ -228,6 +229,18 @@ class Sprite(object):
         return self.texture.subsurface(pygame.Rect(_s, 0, 1, self.texture.get_height()))
 
 ##############################################################
+# Sky class
+##############################################################
+
+class Sky(object):
+    def __init__(self, texture):
+        self.texture = pygame.image.load(texture).convert_alpha()
+
+    def sample_texture(self, angle):
+        s = int((angle / 90.0) * self.texture.get_width()) % self.texture.get_width()
+        return self.texture.subsurface(pygame.Rect(s, 0, 1, self.texture.get_height()))
+
+##############################################################
 # Main Function
 ##############################################################
 
@@ -236,6 +249,8 @@ def main():
 
     # Local variables.
     done = False
+    toggle_sky = True
+    sky_enabled = False
     player_pos = vec2(0.0, 0.0)
     player_dir = vec2(-1.0, 0.0)
     plane = vec2(0.0, 0.66)
@@ -276,6 +291,7 @@ def main():
     ]
     floor = Plane3d(FLOOR_TEXTURE)
     ceiln = Plane3d(CEIL_TEXTURE)
+    sky = Sky(SKY_TEXTURE)
     sprites = [
         Sprite(vec2(-1.5, -2.0), "Textures/bag.png"),
         Sprite(vec2(1.5, -2.0), "Textures/bag.png")
@@ -293,11 +309,18 @@ def main():
                 if (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE) or event.type == pygame.QUIT:
                     done = True
 
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE and toggle_sky:
+                    toggle_sky = False
+                    sky_enabled = not sky_enabled
+
+                elif event.type == pygame.KEYUP and event.key == pygame.K_SPACE and not toggle_sky:
+                    toggle_sky = True
+
                 # Record wich keys were pressed and released this frame
                 try:
                     if event.type == pygame.KEYDOWN:
                         arrow_keys[event.key] = True
-                    if event.type == pygame.KEYUP:
+                    elif event.type == pygame.KEYUP:
                         arrow_keys[event.key] = False
                 except KeyError:
                     pass
@@ -335,13 +358,20 @@ def main():
                 plane.x = plane.x * math.cos(-PLAYER_TURN_SPEED) - plane.y * math.sin(-PLAYER_TURN_SPEED);
                 plane.y = oldPlaneX * math.sin(-PLAYER_TURN_SPEED) + plane.y * math.cos(-PLAYER_TURN_SPEED);
 
-            # Render ceiling and floor.
-            frame_buffer.fill(FILL_COLOR)
+            # Clear the screen
+            #frame_buffer.fill(FILL_COLOR)
 
             # Render walls.
             angle = -FOV / 2.0
             depth_buffer = [0 for x in xrange(FB_SIZE[0])]
+            p_angle = 360.0 - (math.atan2(player_dir.y, player_dir.x) * RAD2DEG)
             for i in xrange(FB_SIZE[0]):
+                if sky_enabled and h < FB_SIZE[1]:
+                    sky_angle = (p_angle + angle) % 360.0
+                    sky_angle = 360.0 - sky_angle if sky_angle < 0.0 else sky_angle
+                    stex = sky.sample_texture(sky_angle)
+                    frame_buffer.blit(stex, (i, 0))
+
                 # Generate camera ray
                 camera_x = 2.0 * (float(i) / float(FB_SIZE[0])) - 1;
                 r = Ray(vec2(player_pos.x, player_pos.y), player_dir.add(plane.scale(camera_x)))
@@ -391,19 +421,22 @@ def main():
                             weight = cd / (d * math.cos(angle * DEG2RAD))
                             st = vec2((weight * p.x) + ((1.0 - weight) * player_pos.x), (weight * p.y) + ((1.0 - weight) * player_pos.y))
 
-                            # Sample floor and ceiling texture
+                            # Sample floor
                             ftex = floor.sample_texture(st)
-                            ctex = ceiln.sample_texture(st)
 
-                            # Draw floor and ceiling
+                            # Draw floor
                             frame_buffer.blit(floor.texture, (i, j), ftex)
-                            frame_buffer.blit(ceiln.texture, (i, FB_SIZE[1] - j), ctex)
 
-                            # Darken floor and ceiling according to distance
+                            # Darken floor according to distance
                             _d = (cd if cd < FAR else FAR) / FAR
                             depth = 255 - int(_d * 255)
                             frame_buffer.fill((depth, depth, depth), pygame.Rect(i, j, 1, 1), pygame.BLEND_MULT)
-                            frame_buffer.fill((depth, depth, depth), pygame.Rect(i, FB_SIZE[1] - j, 1, 1), pygame.BLEND_MULT)
+
+                            # Draw ceiling
+                            if not sky_enabled:
+                                ctex = ceiln.sample_texture(st)
+                                frame_buffer.blit(ceiln.texture, (i, FB_SIZE[1] - j), ctex)
+                                frame_buffer.fill((depth, depth, depth), pygame.Rect(i, FB_SIZE[1] - j, 1, 1), pygame.BLEND_MULT)
 
                 angle += ANGLE_INCREMENT
             

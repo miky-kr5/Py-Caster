@@ -4,4 +4,6 @@ Ray Casting implementation with Pygame.
 
 Textures by She-Bob.
 
+Sky background texture by Summer Thaxton, Hannah Cohan and Stafford McIntyre for the PlatForge project.
+
 [[./screenshot.png]]
